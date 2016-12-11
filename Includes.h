@@ -15,6 +15,7 @@
 #include <arpa/inet.h> //htonl, htons
 #include <signal.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #include <vector>
 #include <algorithm>

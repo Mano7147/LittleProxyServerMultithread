@@ -16,6 +16,8 @@ struct Record {
 class Cache {
     std::map<std::pair<std::string, std::string>, Record> cache;
 
+    pthread_mutex_t mtx;
+
 public:
 
     Cache();

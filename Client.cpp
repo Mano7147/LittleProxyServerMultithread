@@ -3,9 +3,8 @@
 //
 
 #include "Client.h"
-#include "Parser.h"
 
-Client::Client(int my_socket, Cache * cache) {
+Client::Client(int my_socket, Cache * cache, HostResolver * host_resolver) {
     this->my_socket = my_socket;
     this->http_socket = -1;
 
@@ -25,7 +24,13 @@ Client::Client(int my_socket, Cache * cache) {
 
     flag_data_cached = false;
 
+    pthread_mutex_init(&mtx_execute_loop, 0);
+    flag_execute_loop = true;
+    flag_loop_finished = false;
+
     this->cache = cache;
+
+    this->host_resolver = host_resolver;
 }
 
 void Client::add_result_to_cache() {
@@ -40,10 +45,10 @@ void Client::add_result_to_cache() {
 }
 
 int Client::create_tcp_connection_to_request(std::string host_name) {
-    struct hostent * host_info = gethostbyname(host_name.c_str());
+    struct sockaddr_in dest_addr;
+    int res = host_resolver->get_server_address(host_name, dest_addr);
 
-    if (NULL == host_info) {
-        perror("gethostbyname");
+    if (RESULT_INCORRECT == res) {
         return RESULT_INCORRECT;
     }
 
@@ -54,18 +59,13 @@ int Client::create_tcp_connection_to_request(std::string host_name) {
         return RESULT_INCORRECT;
     }
 
-    struct sockaddr_in dest_addr;
-    dest_addr.sin_family = PF_INET;
-    dest_addr.sin_port = htons(DEFAULT_PORT);
-    memcpy(&dest_addr.sin_addr, host_info->h_addr, host_info->h_length);
-
-    http_socket_flags = fcntl(http_socket, F_GETFL, 0);
-    fcntl(http_socket, F_SETFL, http_socket_flags | O_NONBLOCK);
+    /*http_socket_flags = fcntl(http_socket, F_GETFL, 0);
+    fcntl(http_socket, F_SETFL, http_socket_flags | O_NONBLOCK);*/
 
     fprintf(stderr, "Before connect\n");
 
     if (connect(http_socket, (struct sockaddr *)&dest_addr, sizeof(dest_addr))) {
-        if (errno == EINPROGRESS) {
+        if (false && errno == EINPROGRESS) {
             fprintf(stderr, "Connect in progress\n");
             flag_process_http_connecting = true;
 
@@ -249,6 +249,180 @@ void Client::send_request_to_server() {
                 buffer_server_request->do_move_start(sent);
         }
     }
+}
+
+void Client::start_main_loop() {
+    for ( ;  ; ) {
+        pthread_mutex_lock(&mtx_execute_loop);
+        if (!flag_execute_loop) {
+            break;
+        }
+        pthread_mutex_unlock(&mtx_execute_loop);
+
+        fd_set fds_read;
+        fd_set fds_write;
+        FD_ZERO(&fds_read);
+        FD_ZERO(&fds_write);
+        int max_fd = 0;
+
+        FD_SET(my_socket, &fds_read);
+
+        if (buffer_out->is_have_data()) {
+            FD_SET(my_socket, &fds_write);
+        }
+
+        max_fd = my_socket;
+
+        if (is_received_get_request() && -1 != http_socket && !is_closed_http_socket()) {
+            fprintf(stderr, "Set http socket\n");
+            FD_SET(http_socket, &fds_read);
+
+            if (buffer_server_request->is_have_data()) {
+                FD_ISSET(http_socket, &fds_write);
+            }
+
+            max_fd = std::max(max_fd, http_socket);
+        }
+
+        fprintf(stderr, "Before select\n");
+        int activity = select(max_fd + 1, &fds_read, &fds_write, NULL, NULL);
+        fprintf(stderr, "After select: %d\n", activity);
+
+        if (activity <= 0) {
+            perror("select");
+            continue;
+        }
+
+        if (FD_ISSET(my_socket, &fds_read)) {
+            fprintf(stderr, "Have data from client\n");
+            receive_request_from_client();
+        }
+
+        if (!is_data_cached() && !is_closed_http_socket()) {
+            if (FD_ISSET(http_socket, &fds_write)) {
+                fprintf(stderr, "Send request to server\n");
+                send_request_to_server();
+            }
+
+            if (FD_ISSET(http_socket, &fds_read)) {
+                fprintf(stderr, "Receive server response\n");
+                receive_server_response();
+            }
+        }
+
+        if (FD_ISSET(my_socket, &fds_write)) {
+            fprintf(stderr, "Send answer to client\n");
+            send_answer_to_client();
+        }
+
+        if (is_closed_http_socket() && !get_buffer_out()->is_have_data()) {
+            set_closed_correct();
+            break;
+        }
+
+        if (is_data_cached() && !get_buffer_out()->is_have_data()) {
+            set_closed_correct();
+            break;
+        }
+    }
+
+    pthread_mutex_lock(&mtx_execute_loop);
+    flag_loop_finished = true;
+    pthread_mutex_unlock(&mtx_execute_loop);
+}
+
+void Client::do_all() {
+    while (!buffer_in->is_have_data() || NULL == strstr(buffer_in->get_start(), "\r\n\r\n")) {
+        ssize_t received = recv(my_socket, buffer_in->get_end(), buffer_in->get_empty_space_size(), 0);
+
+        if (-1 == received) {
+            perror("recv");
+            return;
+        }
+
+        if (0 == received && NULL == strstr(buffer_in->get_start(), "\r\n\r\n")) {
+            return;
+        }
+
+        buffer_in->do_move_end(received);
+    }
+    fprintf(stderr, "After recv client\n");
+
+    char * p_new_line = strchr(buffer_in->get_start(), '\n');
+
+    if (NULL == p_new_line) {
+        fprintf(stderr, "Bad received data\n");
+        return;
+    }
+
+    size_t i_next_line = (p_new_line - buffer_in->get_start()) + 1;
+    int result = handle_first_line_proxy_request(p_new_line, i_next_line);
+
+    if (RESULT_INCORRECT == result) {
+        return;
+    }
+
+    if (!is_data_cached()) {
+        while (buffer_server_request->is_have_data()) {
+            ssize_t sent = send(http_socket, buffer_server_request->get_start(), buffer_server_request->get_data_size(), 0);
+            fprintf(stderr, "Sent to server: %ld\n", sent);
+
+            if (-1 == sent) {
+                perror("send");
+                http_socket = -1;
+                return;
+            }
+
+            if (0 == sent) {
+                return;
+            }
+
+            buffer_server_request->do_move_start(sent);
+        }
+
+        while (1) {
+            ssize_t received = recv(http_socket, buffer_out->get_end(), buffer_out->get_empty_space_size(), 0);
+            fprintf(stderr, "Received from server: %ld\n", received);
+
+            if (-1 == received) {
+                perror("recv");
+                http_socket = -1;
+                return;
+            }
+
+            if (5 == received) {
+                perror("recv");
+                return;
+            }
+
+            if (0 == received) {
+                break;
+            }
+
+            buffer_out->do_move_end(received);
+        }
+    }
+    fprintf(stderr, "After work with server\n");
+
+    while (buffer_out->is_have_data()) {
+        ssize_t sent = send(my_socket, buffer_out->get_start(), buffer_out->get_data_size(), 0);
+        fprintf(stderr, "Sent: %ld\n", sent);
+
+        if (-1 == sent) {
+            perror("send");
+            return;
+        }
+
+        if (0 == sent) {
+            return;
+        }
+
+        buffer_out->do_move_start(sent);
+    }
+
+    pthread_mutex_lock(&mtx_execute_loop);
+    flag_loop_finished = true;
+    pthread_mutex_unlock(&mtx_execute_loop);
 }
 
 Client::~Client() {

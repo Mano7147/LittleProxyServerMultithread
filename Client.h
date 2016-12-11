@@ -8,6 +8,7 @@
 #include "Cache.h"
 #include "Buffer.h"
 #include "Parser.h"
+#include "HostResolver.h"
 
 class Client {
     int my_socket;
@@ -31,16 +32,26 @@ class Client {
 
     Cache * cache;
 
+    HostResolver * host_resolver;
+
     bool flag_data_cached;
 
     struct sockaddr_in dest_addr;
     long long last_time_activity;
 
+    pthread_mutex_t mtx_execute_loop;
+    bool flag_execute_loop;
+    bool flag_loop_finished;
+
     std::pair<std::string, std::string> first_line_and_host;
+
+    int create_tcp_connection_to_request(std::string host_name);
+
+    int handle_first_line_proxy_request(char * p_new_line, size_t i_next_line);
 
 public:
 
-    Client(int my_socket, Cache * cache);
+    Client(int my_socket, Cache * cache, HostResolver * host_resolver);
 
     void add_result_to_cache();
 
@@ -118,9 +129,19 @@ public:
         return buffer_out;
     }
 
-    int create_tcp_connection_to_request(std::string host_name);
+    void stop_loop_execute() {
+        pthread_mutex_lock(&mtx_execute_loop);
+        flag_execute_loop = false;
+        pthread_mutex_unlock(&mtx_execute_loop);
+    }
 
-    int handle_first_line_proxy_request(char * p_new_line, size_t i_next_line);
+    bool is_loop_finished() {
+        pthread_mutex_lock(&mtx_execute_loop);
+        bool res = flag_loop_finished;
+        pthread_mutex_unlock(&mtx_execute_loop);
+
+        return res;
+    }
 
     void push_data_to_request_from_cache(std::pair<char *, size_t> data);
 
@@ -131,6 +152,10 @@ public:
     void receive_server_response();
 
     void send_request_to_server();
+
+    void start_main_loop();
+
+    void do_all();
 
     ~Client();
 
