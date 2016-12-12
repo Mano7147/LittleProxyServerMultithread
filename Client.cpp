@@ -18,6 +18,7 @@ Client::Client(int my_socket, Cache * cache, HostResolver * host_resolver) {
     flag_received_get_request = false;
 
     flag_closed = false;
+    flag_closed_correct = true;
     flag_closed_http_socket = false;
 
     flag_process_http_connecting = false;
@@ -334,6 +335,7 @@ void Client::start_main_loop() {
 void Client::do_all() {
     while (!buffer_in->is_have_data() || NULL == strstr(buffer_in->get_start(), "\r\n\r\n")) {
         ssize_t received = recv(my_socket, buffer_in->get_end(), buffer_in->get_empty_space_size(), 0);
+        fprintf(stderr, "Received from client %ld\n", received);
 
         if (-1 == received) {
             perror("recv");
@@ -390,11 +392,6 @@ void Client::do_all() {
                 return;
             }
 
-            if (5 == received) {
-                perror("recv");
-                return;
-            }
-
             if (0 == received) {
                 break;
             }
@@ -406,7 +403,7 @@ void Client::do_all() {
 
     while (buffer_out->is_have_data()) {
         ssize_t sent = send(my_socket, buffer_out->get_start(), buffer_out->get_data_size(), 0);
-        fprintf(stderr, "Sent: %ld\n", sent);
+        fprintf(stderr, "Sent to client: %ld\n", sent);
 
         if (-1 == sent) {
             perror("send");

@@ -9,13 +9,6 @@ HostResolver * host_resolver;
 
 int my_server_socket;
 
-// thread and flag is finished
-pthread_mutex_t mtx_threads;
-int global_id = 0;
-pthread_mutex_t mtx_ids;
-std::vector<int> ids;
-std::map<int, std::pair<pthread_t, Client*>> threads;
-
 void init_my_server_socket(unsigned short server_port) {
     my_server_socket = socket(PF_INET, SOCK_STREAM, 0);
 
@@ -43,25 +36,18 @@ void init_my_server_socket(unsigned short server_port) {
     }
 }
 
-void * new_client_thread_function(void * data) {
+void * new_client_thread_function(void * data_client) {
     fprintf(stderr, "I am new thread\n");
 
-    pthread_mutex_lock(&mtx_threads);
-
-    pthread_mutex_lock(&mtx_ids);
-    int id_in_map = ids.back();
-    ids.pop_back();
-    pthread_mutex_unlock(&mtx_ids);
-
-    fprintf(stderr, "Id in map: %d\n", id_in_map);
-    Client * client = threads[id_in_map].second;
-
-    pthread_mutex_unlock(&mtx_threads);
+    Client * client = (Client*)data_client;
 
     fprintf(stderr, "Start main loop\n");
+
     client->do_all();
+
     delete client;
     fprintf(stderr, "Client done\n");
+
     fprintf(stderr, "Loop finished\n");
 }
 
@@ -81,21 +67,10 @@ void accept_incoming_connection() {
     Client * new_client = new Client(client_socket, cache, host_resolver);
     pthread_t new_thread;
 
-    pthread_mutex_lock(&mtx_threads);
-    threads[global_id] = std::make_pair(new_thread, new_client);
-    pthread_mutex_unlock(&mtx_threads);
-
-    pthread_mutex_lock(&mtx_ids);
-    ids.push_back(global_id);
-    pthread_mutex_unlock(&mtx_ids);
-
-    pthread_create(&new_thread, 0, new_client_thread_function, NULL);
-    threads[global_id].first = new_thread;
-
-    ++global_id;
+    pthread_create(&new_thread, 0, new_client_thread_function, (void*)(new_client));
 }
 
-void delete_finished_threads() {
+/*void delete_finished_threads() {
     fprintf(stderr, "Delete clients\n");
 
     pthread_mutex_lock(&mtx_threads);
@@ -117,7 +92,7 @@ void delete_finished_threads() {
     fprintf(stderr, "After delete: %ld\n", threads.size());
 
     pthread_mutex_unlock(&mtx_threads);
-}
+}*/
 
 void start_main_loop() {
     bool flag_execute = true;
@@ -164,9 +139,6 @@ int main(int argc, char *argv[]) {
     cache = new Cache();
 
     host_resolver = new HostResolver();
-
-    pthread_mutex_init(&mtx_threads, 0);
-    pthread_mutex_init(&mtx_ids, 0);
 
     start_main_loop();
 
