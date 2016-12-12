@@ -15,19 +15,19 @@ Client::Client(int my_socket, Cache * cache, HostResolver * host_resolver) {
     buffer_out = new Buffer(DEFAULT_BUFFER_SIZE);
     buffer_server_request = new Buffer(DEFAULT_BUFFER_SIZE);
 
+    pthread_mutex_init(&mtx_execute_loop, 0);
+    flag_execute_loop = true;
+    flag_loop_finished = false;
+
     flag_received_get_request = false;
+
+    flag_data_cached = false;
+
+    flag_process_http_connecting = false;
 
     flag_closed = false;
     flag_closed_correct = true;
     flag_closed_http_socket = false;
-
-    flag_process_http_connecting = false;
-
-    flag_data_cached = false;
-
-    pthread_mutex_init(&mtx_execute_loop, 0);
-    flag_execute_loop = true;
-    flag_loop_finished = false;
 
     this->cache = cache;
 
@@ -47,7 +47,10 @@ void Client::add_result_to_cache() {
 
 int Client::create_tcp_connection_to_request(std::string host_name) {
     struct sockaddr_in dest_addr;
+
+    fprintf(stderr, "Before get address\n");
     int res = host_resolver->get_server_address(host_name, dest_addr);
+    fprintf(stderr, "After get address\n");
 
     if (RESULT_INCORRECT == res) {
         return RESULT_INCORRECT;
@@ -60,23 +63,11 @@ int Client::create_tcp_connection_to_request(std::string host_name) {
         return RESULT_INCORRECT;
     }
 
-    /*http_socket_flags = fcntl(http_socket, F_GETFL, 0);
-    fcntl(http_socket, F_SETFL, http_socket_flags | O_NONBLOCK);*/
-
     fprintf(stderr, "Before connect\n");
 
     if (connect(http_socket, (struct sockaddr *)&dest_addr, sizeof(dest_addr))) {
-        if (false && errno == EINPROGRESS) {
-            fprintf(stderr, "Connect in progress\n");
-            flag_process_http_connecting = true;
-
-            return RESULT_CORRECT;
-        }
-        else {
-            perror("connect");
-
-            return RESULT_INCORRECT;
-        }
+        perror("connect");
+        return RESULT_INCORRECT;
     }
 
     flag_process_http_connecting = false;
@@ -99,7 +90,6 @@ int Client::handle_first_line_proxy_request(char *p_new_line, size_t i_next_line
 
     if ("" == host_name || "" == new_first_line) {
         fprintf(stderr, "Can not correctly parse first line\n");
-
         return RESULT_INCORRECT;
     }
 
@@ -122,216 +112,6 @@ int Client::handle_first_line_proxy_request(char *p_new_line, size_t i_next_line
     }
 }
 
-void Client::receive_request_from_client() {
-    ssize_t received = recv(my_socket, buffer_in->get_end(), buffer_in->get_empty_space_size(), 0);
-
-    fprintf(stderr, "[%d] Received: %ld\n", my_socket, received);
-
-    switch (received) {
-        case -1:
-            perror("Error while read()");
-            set_closed_incorrect();
-            break;
-
-        case 0:
-            fprintf(stderr, "Close client\n");
-            set_closed_correct();
-            break;
-
-        default:
-            int res = buffer_in->do_move_end(received);
-
-            if (RESULT_INCORRECT == res) {
-                set_closed_incorrect();
-                break;
-            }
-
-            if (!flag_received_get_request) {
-                char * p_new_line = strchr(buffer_in->get_start(), '\n');
-
-                if (p_new_line != NULL) {
-                    flag_received_get_request = true;
-
-                    size_t i_next_line = (p_new_line - buffer_in->get_start()) + 1;
-
-                    int result = handle_first_line_proxy_request(p_new_line, i_next_line);
-
-                    if (RESULT_INCORRECT == result) {
-                        set_closed_incorrect();
-                        break;
-                    }
-                }
-            }
-            else {
-                buffer_server_request->add_data_to_end(buffer_in->get_start(), buffer_in->get_data_size());
-                buffer_in->do_move_start(buffer_in->get_data_size());
-            }
-    }
-}
-
-void Client::send_answer_to_client() {
-    if (!is_closed() && buffer_out->is_have_data()) {
-        fprintf(stderr, "\nHave data to send to client\n");
-
-        ssize_t sent = send(my_socket, buffer_out->get_start(), buffer_out->get_data_size(), 0);
-
-        fprintf(stderr, "[%d] Sent: %ld\n", my_socket, sent);
-
-        switch (sent) {
-            case -1:
-                perror("Error while send to client");
-                set_closed_incorrect();
-                break;
-
-            case 0:
-                set_closed_correct();
-                break;
-
-            default:
-                buffer_out->do_move_start(sent);
-        }
-    }
-}
-
-void Client::receive_server_response() {
-    fprintf(stderr, "Have data from server\n");
-
-    if (flag_process_http_connecting) {
-        fprintf(stderr, "Connection established\n");
-
-        fcntl(http_socket, F_SETFL, http_socket_flags);
-        flag_process_http_connecting = false;
-
-        return;
-    }
-
-    ssize_t received = recv(http_socket, buffer_out->get_end(), buffer_out->get_empty_space_size(), 0);
-
-    fprintf(stderr, "[%d] Received: %ldn\n", my_socket, received);
-
-    switch (received) {
-        case -1:
-            perror("recv(http)");
-            set_closed_incorrect();
-            break;
-
-        case 0:
-            fprintf(stderr, "Close http connection\n");
-            fprintf(stderr, "Socket: %d\n", http_socket);
-
-            set_close_http_socket();
-
-            break;
-
-        default:
-            buffer_out->do_move_end(received);
-    }
-}
-
-void Client::send_request_to_server() {
-    if (!is_data_cached() && buffer_server_request->is_have_data()) {
-        fprintf(stderr, "\nHave data to send to http server\n");
-
-        ssize_t sent = send(http_socket, buffer_server_request->get_start(), buffer_server_request->get_data_size(), 0);
-
-        fprintf(stderr, "[%d] Sent: %ld\n", my_socket, sent);
-
-        switch (sent) {
-            case -1:
-                perror("Error while send(http)");
-                set_closed_incorrect();
-                break;
-
-            case 0:
-                set_close_http_socket();
-                break;
-
-            default:
-                buffer_server_request->do_move_start(sent);
-        }
-    }
-}
-
-void Client::start_main_loop() {
-    for ( ;  ; ) {
-        pthread_mutex_lock(&mtx_execute_loop);
-        if (!flag_execute_loop) {
-            break;
-        }
-        pthread_mutex_unlock(&mtx_execute_loop);
-
-        fd_set fds_read;
-        fd_set fds_write;
-        FD_ZERO(&fds_read);
-        FD_ZERO(&fds_write);
-        int max_fd = 0;
-
-        FD_SET(my_socket, &fds_read);
-
-        if (buffer_out->is_have_data()) {
-            FD_SET(my_socket, &fds_write);
-        }
-
-        max_fd = my_socket;
-
-        if (is_received_get_request() && -1 != http_socket && !is_closed_http_socket()) {
-            fprintf(stderr, "Set http socket\n");
-            FD_SET(http_socket, &fds_read);
-
-            if (buffer_server_request->is_have_data()) {
-                FD_ISSET(http_socket, &fds_write);
-            }
-
-            max_fd = std::max(max_fd, http_socket);
-        }
-
-        fprintf(stderr, "Before select\n");
-        int activity = select(max_fd + 1, &fds_read, &fds_write, NULL, NULL);
-        fprintf(stderr, "After select: %d\n", activity);
-
-        if (activity <= 0) {
-            perror("select");
-            continue;
-        }
-
-        if (FD_ISSET(my_socket, &fds_read)) {
-            fprintf(stderr, "Have data from client\n");
-            receive_request_from_client();
-        }
-
-        if (!is_data_cached() && !is_closed_http_socket()) {
-            if (FD_ISSET(http_socket, &fds_write)) {
-                fprintf(stderr, "Send request to server\n");
-                send_request_to_server();
-            }
-
-            if (FD_ISSET(http_socket, &fds_read)) {
-                fprintf(stderr, "Receive server response\n");
-                receive_server_response();
-            }
-        }
-
-        if (FD_ISSET(my_socket, &fds_write)) {
-            fprintf(stderr, "Send answer to client\n");
-            send_answer_to_client();
-        }
-
-        if (is_closed_http_socket() && !get_buffer_out()->is_have_data()) {
-            set_closed_correct();
-            break;
-        }
-
-        if (is_data_cached() && !get_buffer_out()->is_have_data()) {
-            set_closed_correct();
-            break;
-        }
-    }
-
-    pthread_mutex_lock(&mtx_execute_loop);
-    flag_loop_finished = true;
-    pthread_mutex_unlock(&mtx_execute_loop);
-}
-
 void Client::do_all() {
     while (!buffer_in->is_have_data() || NULL == strstr(buffer_in->get_start(), "\r\n\r\n")) {
         ssize_t received = recv(my_socket, buffer_in->get_end(), buffer_in->get_empty_space_size(), 0);
@@ -342,7 +122,23 @@ void Client::do_all() {
             return;
         }
 
-        if (0 == received && NULL == strstr(buffer_in->get_start(), "\r\n\r\n")) {
+        if (0 == received && (!buffer_in->is_have_data() || NULL == strstr(buffer_in->get_start(), "\r\n\r\n"))) {
+            return;
+        }
+
+        if (buffer_in->get_data_size() >= 3 && NULL == strstr(buffer_in->get_start(), "GET")) {
+            fprintf(stderr, "Not GET request\n");
+            return;
+        }
+
+        if (NULL != strchr(buffer_in->get_start(), '\n') && NULL == strstr(buffer_in->get_start(), "HTTP/1.0")) {
+            fprintf(stderr, "Not http1.0 request:\n");
+            Parser::print_buffer_data(buffer_in->get_start(), buffer_in->get_data_size());
+            return;
+        }
+
+        if (buffer_in->get_data_size() > MAX_GET_REQUEST_SIZE) {
+            fprintf(stderr, "Too big GET request\n");
             return;
         }
 
@@ -357,8 +153,12 @@ void Client::do_all() {
         return;
     }
 
+    fprintf(stderr, "Before handle host and path\n");
+
     size_t i_next_line = (p_new_line - buffer_in->get_start()) + 1;
     int result = handle_first_line_proxy_request(p_new_line, i_next_line);
+
+    fprintf(stderr, "After handle host and path\n");
 
     if (RESULT_INCORRECT == result) {
         return;
@@ -423,7 +223,7 @@ void Client::do_all() {
 }
 
 Client::~Client() {
-    fprintf(stderr, "Destructor client!!!!\n");
+    fprintf(stderr, "Destructor client start\n");
 
     if (-1 != my_socket && flag_correct_my_socket) {
         close(my_socket);
@@ -433,7 +233,7 @@ Client::~Client() {
         close(http_socket);
     }
 
-    if (flag_closed_correct) {
+    if (flag_closed_correct && !is_data_cached()) {
         fprintf(stderr, "Add result to cache\n");
         add_result_to_cache();
     }
@@ -441,4 +241,6 @@ Client::~Client() {
     delete buffer_in;
     delete buffer_server_request;
     delete buffer_out;
+
+    fprintf(stderr, "Destructor done\n");
 }

@@ -15,10 +15,9 @@ bool Cache::is_in_cache(std::pair<std::string, std::string> key) {
 
     fprintf(stderr, "Check cache: %s %s\n", key.first.c_str(), key.second.c_str());
     bool result = (bool) cache.count(key);
+    fprintf(stderr, "Result: %d\n", result);
 
     pthread_mutex_unlock(&mtx);
-
-    fprintf(stderr, "Result: %d\n", result);
 
     return result;
 }
@@ -58,7 +57,7 @@ void Cache::delete_from_cache(std::pair<std::string, std::string> key) {
 int Cache::push_to_cache(std::pair<std::string, std::string> key, char *value, size_t size_value) {
     pthread_mutex_lock(&mtx);
 
-    fprintf(stderr, "!!!!!!!!!!! PUSH !!!: %s %s\n", key.first.c_str(), key.second.c_str());
+    fprintf(stderr, "Push new to cache: %s %s\n", key.first.c_str(), key.second.c_str());
 
     if (cache.count(key)) {
         free(cache[key].data);

@@ -145,16 +145,6 @@ public:
 
     void push_data_to_request_from_cache(std::pair<char *, size_t> data);
 
-    void receive_request_from_client();
-
-    void send_answer_to_client();
-
-    void receive_server_response();
-
-    void send_request_to_server();
-
-    void start_main_loop();
-
     void do_all();
 
     ~Client();

@@ -15,6 +15,9 @@ int HostResolver::get_server_address(std::string host_name, struct sockaddr_in &
 
     if (NULL == host_info) {
         perror("gethostbyname");
+
+        pthread_mutex_unlock(&mtx_gethostbyname);
+
         return RESULT_INCORRECT;
     }
 

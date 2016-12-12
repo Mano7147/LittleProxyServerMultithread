@@ -85,15 +85,26 @@ void Parser::push_first_data_request(Buffer *buffer_request, Buffer *buffer_in, 
     buffer_request->add_data_to_end(buffer_in->get_start() + i_next_line, size_without_first_line);
 
     fprintf(stderr, "New HTTP request:\n");
+
     print_buffer_data(buffer_request->get_start(), buffer_request->get_data_size());
 
     buffer_in->do_move_start(buffer_in->get_data_size());
+
+    fprintf(stderr, "Push first data done\n");
 }
 
 void Parser::print_buffer_data(char * data, size_t size) {
+    static std::ofstream out_file("output.txt");
+
     char * to_print = (char*) malloc(size + 1);
     strncpy(to_print, data, size);
     to_print[size] = '\0';
     fprintf(stderr, "%s\n", to_print);
+
+    // Print only GET requests
+    if (NULL != strstr(to_print, "GET")) {
+        out_file << to_print << std::endl;
+    }
+
     free(to_print);
 }

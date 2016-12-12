@@ -1,8 +1,6 @@
 #include "Includes.h"
 #include "Client.h"
 
-std::ofstream out_to_file("output.txt");
-
 Cache * cache;
 
 HostResolver * host_resolver;
@@ -37,32 +35,31 @@ void init_my_server_socket(unsigned short server_port) {
 }
 
 void * new_client_thread_function(void * data_client) {
-    fprintf(stderr, "I am new thread\n");
+    fprintf(stderr, "New thread started\n");
 
     Client * client = (Client*)data_client;
 
-    fprintf(stderr, "Start main loop\n");
+    fprintf(stderr, "Start client's main function\n");
 
     client->do_all();
 
     delete client;
-    fprintf(stderr, "Client done\n");
 
-    fprintf(stderr, "Loop finished\n");
+    fprintf(stderr, "New thread finished\n");
 }
 
 void accept_incoming_connection() {
     struct sockaddr_in client_address;
     int address_size = sizeof(sockaddr_in);
 
-    fprintf(stderr, "Before accept\n");
     int client_socket = accept(my_server_socket, (struct sockaddr *)&client_address, (socklen_t *)&address_size);
-    fprintf(stderr, "After accept\n");
 
     if (client_socket <= 0) {
         perror("accept");
         exit(EXIT_FAILURE);
     }
+
+    fprintf(stderr, "Create new client\n");
 
     Client * new_client = new Client(client_socket, cache, host_resolver);
     pthread_t new_thread;
@@ -70,37 +67,11 @@ void accept_incoming_connection() {
     pthread_create(&new_thread, 0, new_client_thread_function, (void*)(new_client));
 }
 
-/*void delete_finished_threads() {
-    fprintf(stderr, "Delete clients\n");
-
-    pthread_mutex_lock(&mtx_threads);
-
-    fprintf(stderr, "Before delete: %ld\n", threads.size());
-
-    std::map<int, std::pair<pthread_t, Client*>> new_threads;
-    for (auto t : threads) {
-        if (t.second.second->is_loop_finished()) {
-            delete t.second.second;
-            pthread_join(t.second.first, 0);
-        }
-        else {
-            new_threads[t.first] = std::make_pair(t.second.first, t.second.second);
-        }
-    }
-    threads = new_threads;
-
-    fprintf(stderr, "After delete: %ld\n", threads.size());
-
-    pthread_mutex_unlock(&mtx_threads);
-}*/
-
 void start_main_loop() {
     bool flag_execute = true;
 
     for ( ; flag_execute ; ) {
         accept_incoming_connection();
-        fprintf(stderr, "Between\n");
-        //delete_finished_threads();
     }
 }
 
@@ -111,6 +82,7 @@ void signal_handle(int sig) {
     delete cache;
 
     fprintf(stderr, "Close my server socket\n");
+
     close(my_server_socket);
 
     exit(EXIT_SUCCESS);
@@ -142,9 +114,7 @@ int main(int argc, char *argv[]) {
 
     start_main_loop();
 
-    delete cache;
-
-    close(my_server_socket);
+    signal_handle(0);
 
     return 0;
 }
