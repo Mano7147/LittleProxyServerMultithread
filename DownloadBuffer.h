@@ -28,7 +28,7 @@ public:
 
     void do_move_end(size_t size);
 
-    char * get_data_from_buffer(size_t offs, size_t &size);
+    char * get_data_from_buffer(size_t offs, ssize_t &size);
 
     char * get_end() {
         return buf + end;
@@ -46,6 +46,10 @@ public:
     void set_finished_incorrect() {
         flag_finished = true;
         flag_finished_correct = false;
+    }
+
+    bool is_finished_correct() {
+        return flag_finished && flag_finished_correct;
     }
 
     ~DownloadBuffer();

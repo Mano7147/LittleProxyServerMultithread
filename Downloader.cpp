@@ -5,66 +5,72 @@
 #include "Downloader.h"
 
 Downloader::Downloader() {
-    buffer = new Buffer(DEFAULT_BUFFER_SIZE);
+    buffer_from_server = new DownloadBuffer(DEFAULT_BUFFER_SIZE);
 
-    server_socket = socket(PF_SOCKET, SOCK_STREAM, 0);
+    server_socket = socket(PF_INET, SOCK_STREAM, 0);
 
-    if (socket <= 0) {
+    if (server_socket <= 0) {
         perror("socket");
         exit(EXIT_FAILURE);
     }
-
-    flag_finished = false;
-    flag_finished_correct = true;
 }
 
 int Downloader::send_request_to_server() {
+    fprintf(stderr, "Connect to server...\n");
+
+    if (connect(server_socket, (struct sockaddr*) &addr_to_server, sizeof(struct sockaddr_in))) {
+        perror("connect");
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(stderr, "Connection have been established\n");
+
     while (buffer_to_server->get_data_size()) {
-        ssize_t sent = send(server_socket, buffer_to_server, buffer_to_server->get_data_size(), 0);
+        ssize_t sent = send(server_socket, buffer_to_server->get_start(), buffer_to_server->get_data_size(), 0);
 
         if (-1 == sent) {
-            perror(sent);
+            perror("send");
             return RESULT_INCORRECT;
         }
         else if (0 == sent) {
             fprintf(stderr, "Server close connection\n");
-            return (buffer_to_server->is_have_data() ? RESULT_INCORRECT : RESULT_CORRECT);
+            return RESULT_INCORRECT;
         }
         else {
             buffer_to_server->do_move_start(sent);
         }
     }
+
+    fprintf(stderr, "Sent all request to server:\n");
+    Parser::print_buffer_data(buffer_to_server->get_buf(), buffer_to_server->get_i_end());
+
     return RESULT_CORRECT;
 }
 
 void Downloader::start_receive_from_server() {
-    struct socklen_t sock_len = sizeof(struct sockaddr_in);
-
-    if (connect(server_socket, &addr, sock_len)) {
-        perror("connect");
-        exit(EXIT_FAILURE);
-    }
-
     while (1) {
-        ssize_t received = recv(server_socket, buffer->get_end(), buffer->get_empty_size(), 0);
+        char * buf = buffer_from_server->get_end();
+        size_t size = buffer_from_server->get_empty_size();
+
+        ssize_t received = recv(server_socket, buf, size, 0);
 
         if (-1 == received) {
-            flag_finished = true;
-            flag_finished_correct = false;
+            buffer_from_server->set_finished_incorrect();
             break;
         }
         else if (0 == received) {
-            flag_finished = true;
-            flag_finished_correct = true;
+            buffer_from_server->set_finished_correct();
             break;
         }
         else {
-            buffer->do_move_end(received);
+            buffer_from_server->do_move_end((size_t)received);
         }
     }
-    fprintf(stderr, "Download finished: %d\n", flag_finished_correct);
+
+    fprintf(stderr, "Download finished: %d\n", buffer_from_server->is_finished_correct());
 }
 
 Downloader::~Downloader() {
-    delete buffer;
+    fprintf(stderr, "Destructor downloader\n");
+    delete buffer_from_server;
 }

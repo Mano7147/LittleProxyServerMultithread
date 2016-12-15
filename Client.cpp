@@ -6,14 +6,11 @@
 
 Client::Client(int my_socket, Cache * cache, HostResolver * host_resolver) {
     this->my_socket = my_socket;
-    this->http_socket = -1;
 
     flag_correct_my_socket = true;
     flag_correct_http_socket = true;
 
     buffer_in = new Buffer(DEFAULT_BUFFER_SIZE);
-    buffer_out = new Buffer(DEFAULT_BUFFER_SIZE);
-    buffer_server_request = new Buffer(DEFAULT_BUFFER_SIZE);
 
     pthread_mutex_init(&mtx_execute_loop, 0);
     flag_execute_loop = true;
@@ -32,54 +29,6 @@ Client::Client(int my_socket, Cache * cache, HostResolver * host_resolver) {
     this->cache = cache;
 
     this->host_resolver = host_resolver;
-}
-
-void Client::add_result_to_cache() {
-    if (!cache->is_in_cache(first_line_and_host)) {
-        size_t size_data = buffer_out->get_i_end();
-
-        char * data = (char*)malloc(size_data);
-        memcpy(data, buffer_out->get_buf(), size_data);
-
-        cache->push_to_cache(first_line_and_host, data, size_data);
-    }
-}
-
-int Client::create_tcp_connection_to_request(std::string host_name) {
-    struct sockaddr_in dest_addr;
-
-    fprintf(stderr, "Before get address\n");
-    int res = host_resolver->get_server_address(host_name, dest_addr);
-    fprintf(stderr, "After get address\n");
-
-    if (RESULT_INCORRECT == res) {
-        return RESULT_INCORRECT;
-    }
-
-    http_socket = socket(PF_INET, SOCK_STREAM, 0);
-
-    if (-1 == http_socket) {
-        perror("socket");
-        return RESULT_INCORRECT;
-    }
-
-    fprintf(stderr, "Before connect\n");
-
-    if (connect(http_socket, (struct sockaddr *)&dest_addr, sizeof(dest_addr))) {
-        perror("connect");
-        return RESULT_INCORRECT;
-    }
-
-    flag_process_http_connecting = false;
-    fprintf(stderr, "Connection established\n");
-
-    return RESULT_CORRECT;
-}
-
-void Client::push_data_to_request_from_cache(std::pair<char *, size_t> data) {
-    fprintf(stderr, "Put data from cache\n");
-    set_data_cached();
-    buffer_out->add_data_to_end(data.first, data.second);
 }
 
 DownloadBuffer * Client::get_buffer_from_server(char *p_new_line, size_t i_next_line) {
@@ -118,11 +67,11 @@ int Client::receive_request_from_client() {
             return RESULT_INCORRECT;
         }
 
-        if (NULL != strchr(buffer_in->get_start(), '\n') && NULL == strstr(buffer_in->get_start(), "HTTP/1.0")) {
+        /*if (NULL != strchr(buffer_in->get_start(), '\n') && NULL == strstr(buffer_in->get_start(), "HTTP/1.0")) {
             fprintf(stderr, "Not http1.0 request:\n");
             Parser::print_buffer_data(buffer_in->get_start(), buffer_in->get_data_size());
             return RESULT_INCORRECT;
-        }
+        }*/
 
         if (buffer_in->get_data_size() > MAX_GET_REQUEST_SIZE) {
             fprintf(stderr, "Too big GET request\n");
@@ -132,11 +81,49 @@ int Client::receive_request_from_client() {
         buffer_in->do_move_end(received);
     }
 
+    fprintf(stderr, "Received request to proxy server:\n");
+    Parser::print_buffer_data(buffer_in->get_buf(), buffer_in->get_data_size());
+
     return RESULT_CORRECT;
 }
 
 int Client::send_response_to_client(DownloadBuffer * buffer_from_server) {
+    size_t offs = 0;
+    ssize_t size = 0;
+    char * data;
 
+    while (1) {
+        data = buffer_from_server->get_data_from_buffer(offs, size);
+
+        if (NULL == data) {
+            if (-1 == size) {
+                fprintf(stderr, "Error receive from buffer\n");
+                return RESULT_INCORRECT;
+            }
+            if (0 == size) {
+                fprintf(stderr, "Sent all response to client");
+                return RESULT_CORRECT;
+            }
+            else {
+                fprintf(stderr, "Not proper branch\n");
+                return RESULT_INCORRECT;
+            }
+        }
+
+        ssize_t sent = send(my_socket, data, (size_t)size, 0);
+
+        if (-1 == sent) {
+            perror("send");
+            return RESULT_INCORRECT;
+        }
+        else if (0 == sent) {
+            fprintf(stderr, "Client close connection\n");
+            return RESULT_INCORRECT;
+        }
+        else {
+            offs += sent;
+        }
+    }
 }
 
 int Client::do_all() {
@@ -181,18 +168,7 @@ Client::~Client() {
         close(my_socket);
     }
 
-    if (-1 != http_socket && flag_correct_http_socket) {
-        close(http_socket);
-    }
-
-    if (flag_closed_correct && !is_data_cached()) {
-        fprintf(stderr, "Add result to cache\n");
-        add_result_to_cache();
-    }
-
     delete buffer_in;
-    delete buffer_server_request;
-    delete buffer_out;
 
-    fprintf(stderr, "Destructor done\n");
+    fprintf(stderr, "Destructor client done\n");
 }

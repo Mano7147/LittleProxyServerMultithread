@@ -111,7 +111,6 @@ int main(int argc, char *argv[]) {
     cache = new Cache();
 
     char bad_request[100] = "Bad request\n\0";
-    cache->push_to_cache(std::make_pair("Bad request", ""), bad_request, strlen(bad_request));
 
     host_resolver = new HostResolver();
 

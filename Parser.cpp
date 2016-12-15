@@ -80,22 +80,20 @@ std::pair<std::string, std::string> Parser::get_new_first_line_and_hostname(Buff
     return std::make_pair(host_name, new_first_line);
 }
 
-void Parser::push_first_data_request(Buffer *buffer_request, Buffer *buffer_in, std::string first_line,
-                                     size_t i_next_line)
-{
-    size_t size_without_first_line = (buffer_in->get_end() - buffer_in->get_start()) - i_next_line;
+Buffer * Parser::change_request(Buffer * old_buffer, std::string new_first_line) {
+    size_t pos_new_line = (strchr(old_buffer->get_buf(), '\n') - old_buffer->get_buf()) + 1;
+    size_t size_without_first_line = (old_buffer->get_data_size()) - pos_new_line;
 
-    buffer_request->add_data_to_end(first_line.c_str(), first_line.size());
-    buffer_request->add_symbol_to_end('\n');
-    buffer_request->add_data_to_end(buffer_in->get_start() + i_next_line, size_without_first_line);
+    Buffer * new_buffer = new Buffer(DEFAULT_BUFFER_SIZE);
+
+    new_buffer->add_data_to_end(new_first_line.c_str(), new_first_line.size());
+    new_buffer->add_symbol_to_end('\n');
+    new_buffer->add_data_to_end(old_buffer->get_start() + pos_new_line, size_without_first_line);
 
     fprintf(stderr, "New HTTP request:\n");
+    print_buffer_data(new_buffer->get_start(), new_buffer->get_data_size());
 
-    print_buffer_data(buffer_request->get_start(), buffer_request->get_data_size());
-
-    buffer_in->do_move_start(buffer_in->get_data_size());
-
-    fprintf(stderr, "Push first data done\n");
+    return new_buffer;
 }
 
 void Parser::print_buffer_data(char * data, size_t size) {

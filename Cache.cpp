@@ -27,7 +27,7 @@ void Cache::delete_from_cache(std::pair<std::string, std::string> key) {
     pthread_mutex_unlock(&mtx);
 }
 
-Downloader * Cache::create_new_downloader(std::string host_name, Buffer * buffer_to_server) {
+Downloader * Cache::create_new_downloader(std::string host_name, std::string new_first_line, Buffer * buffer_to_server) {
     struct hostent * host_info = gethostbyname(host_name.c_str());
 
     if (NULL == host_info) {
@@ -42,9 +42,7 @@ Downloader * Cache::create_new_downloader(std::string host_name, Buffer * buffer
 
     Downloader * downloader = new Downloader();
     downloader->set_addr_to_server(dest_addr);
-    downloader->set_buffer_to_server(buffer_to_server);
-
-    fprintf(stderr, "Before connect\n");
+    downloader->set_buffer_to_server(buffer_to_server, new_first_line);
 
     pthread_t thread;
     pthread_create(&thread, 0, start_new_downloader, (void*)downloader);
@@ -58,11 +56,20 @@ DownloadBuffer * Cache::get_from_cache(std::pair<std::string, std::string> key, 
     pthread_mutex_lock(&mtx);
 
     if (!downloaders.count(key)) {
-        Downloader * downloader = create_new_downloader(key.first, buffer_to_server);
-        buffer = downloader->get_buffer();
+        Downloader * downloader = create_new_downloader(key.first, key.second, buffer_to_server);
+        downloaders[key] = downloader;
+
+        if (NULL == downloader) {
+            fprintf(stderr, "Can not to resolve host\n");
+            pthread_mutex_unlock(&mtx);
+            return NULL;
+        }
+
+        buffer = downloader->get_buffer_from_server();
     }
     else {
-        buffer = downloaders[key]->get_buffer();
+        fprintf(stderr, "Have data in cache\n");
+        buffer = downloaders[key]->get_buffer_from_server();
     }
 
     pthread_mutex_unlock(&mtx);
@@ -72,7 +79,7 @@ DownloadBuffer * Cache::get_from_cache(std::pair<std::string, std::string> key, 
 
 Cache::~Cache() {
     for (auto elem : downloaders) {
-        delete elem;
+        delete elem.second;
     }
 
     pthread_mutex_destroy(&mtx);

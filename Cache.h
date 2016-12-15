@@ -19,9 +19,9 @@ class Cache {
 
     pthread_mutex_t mtx;
 
-    void * start_new_downloader(void * pdownloader);
+    static void * start_new_downloader(void * pdownloader);
 
-    Downloader * create_new_downloader(std::string host_name, Buffer * buffer_to_server);
+    Downloader * create_new_downloader(std::string host_name, std::string new_first_line, Buffer * buffer_to_server);
 
 public:
 

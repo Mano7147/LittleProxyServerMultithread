@@ -38,8 +38,8 @@ void DownloadBuffer::resize(size_t size) {
 void DownloadBuffer::do_move_end(size_t size) {
     pthread_mutex_lock(&mtx);
 
-    if (end + size >= this->size) {
-        resize(size);
+    while (end + size >= this->size) {
+        resize(this->size * 2);
     }
 
     end += size;
@@ -49,10 +49,16 @@ void DownloadBuffer::do_move_end(size_t size) {
     pthread_mutex_unlock(&mtx);
 }
 
-char * DownloadBuffer::get_data_from_buffer(size_t offs, size_t &size) {
+char * DownloadBuffer::get_data_from_buffer(size_t offs, ssize_t &size) {
     pthread_mutex_lock(&mtx);
 
-    while (offs <= end) {
+    if (offs == end && flag_finished) {
+        size = 0;
+        pthread_mutex_unlock(&mtx);
+        return NULL;
+    }
+
+    while (offs >= end) {
         pthread_cond_wait(&cond, &mtx);
     }
 
@@ -65,6 +71,8 @@ char * DownloadBuffer::get_data_from_buffer(size_t offs, size_t &size) {
 }
 
 DownloadBuffer::~DownloadBuffer() {
+    fprintf(stderr, "Destructor download buffer\n");
+
     free(buf);
 
     pthread_mutex_destroy(&mtx);

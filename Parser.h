@@ -15,8 +15,7 @@ public:
 
     static std::pair<std::string, std::string> get_new_first_line_and_hostname(Buffer * buffer_in, char * p_new_line);
 
-    static void push_first_data_request(Buffer * buffer_request, Buffer * buffer_in, std::string first_line,
-                                        size_t i_next_line);
+    static Buffer * change_request(Buffer * old_buffer, std::string new_first_line);
 
     static void print_buffer_data(char * data, size_t size);
 };
