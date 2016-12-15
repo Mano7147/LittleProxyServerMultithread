@@ -47,7 +47,11 @@ class Client {
 
     int create_tcp_connection_to_request(std::string host_name);
 
-    int handle_first_line_proxy_request(char * p_new_line, size_t i_next_line);
+    int receive_request_from_client();
+
+    int send_response_to_client(DownloadBuffer * buffer_from_server);
+
+    DownloadBuffer * get_buffer_from_server(char *p_new_line, size_t i_next_line);
 
 public:
 
@@ -145,7 +149,7 @@ public:
 
     void push_data_to_request_from_cache(std::pair<char *, size_t> data);
 
-    void do_all();
+    int do_all();
 
     ~Client();
 

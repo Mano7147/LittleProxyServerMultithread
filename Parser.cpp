@@ -37,8 +37,13 @@ std::pair<std::string, std::string> Parser::parse_hostname_and_path(char * uri) 
 std::pair<std::string, std::string> Parser::get_new_first_line_and_hostname(Buffer * buffer_in, char *p_new_line) {
     if (NULL == strstr(buffer_in->get_start(), "GET")) {
         fprintf(stderr, "Not GET request\n");
-        return std::make_pair("", "");
+        return std::make_pair("Bad request", "");
     }
+
+    /*if (NULL == strstr(buffer_in->get_start(), "HTTP/1.0")) {
+        fprintf(stderr, "Not HTTP/1.0 request\n");
+        return std::make_pair("Bad request", "");
+    }*/
 
     char first_line[LITTLE_STRING_SIZE];
 

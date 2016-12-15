@@ -10,69 +10,70 @@ Cache::Cache() {
     pthread_mutex_init(&mtx, 0);
 }
 
-bool Cache::is_in_cache(std::pair<std::string, std::string> key) {
-    pthread_mutex_lock(&mtx);
-
-    fprintf(stderr, "Check cache: %s %s\n", key.first.c_str(), key.second.c_str());
-    bool result = (bool) cache.count(key);
-    fprintf(stderr, "Result: %d\n", result);
-
-    pthread_mutex_unlock(&mtx);
-
-    return result;
-}
-
-Record Cache::get_from_cache(std::pair<std::string, std::string> key) {
-    Record result;
-
-    pthread_mutex_lock(&mtx);
-
-    if (!cache.count(key)) {
-        Record record;
-        record.data = NULL;
-        result =  record;
-    }
-    else {
-        result =  cache[key];
-    }
-
-    pthread_mutex_unlock(&mtx);
-
-    return result;
+void * Cache::start_new_downloader(void * pdownloader) {
+    Downloader * downloader = (Downloader*)pdownloader;
+    downloader->send_request_to_server();
+    downloader->start_receive_from_server();
 }
 
 void Cache::delete_from_cache(std::pair<std::string, std::string> key) {
     pthread_mutex_lock(&mtx);
 
-    if (!cache.count(key)) {
-        return;
+    if (downloaders.count(key)) {
+        delete downloaders[key];
+        downloaders.erase(key);
     }
-
-    free(cache[key].data);
-    cache.erase(key);
 
     pthread_mutex_unlock(&mtx);
 }
 
-int Cache::push_to_cache(std::pair<std::string, std::string> key, char *value, size_t size_value) {
-    pthread_mutex_lock(&mtx);
+Downloader * Cache::create_new_downloader(std::string host_name, Buffer * buffer_to_server) {
+    struct hostent * host_info = gethostbyname(host_name.c_str());
 
-    fprintf(stderr, "Push new to cache: %s %s\n", key.first.c_str(), key.second.c_str());
-
-    if (cache.count(key)) {
-        free(cache[key].data);
+    if (NULL == host_info) {
+        perror("gethostbyname");
+        return NULL;
     }
 
-    cache[key].data = (char*) malloc(size_value);
-    memcpy(cache[key].data, value, size_value);
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = PF_INET;
+    dest_addr.sin_port = htons(DEFAULT_PORT);
+    memcpy(&dest_addr.sin_addr, host_info->h_addr, host_info->h_length);
 
-    cache[key].size = size_value;
+    Downloader * downloader = new Downloader();
+    downloader->set_addr_to_server(dest_addr);
+    downloader->set_buffer_to_server(buffer_to_server);
+
+    fprintf(stderr, "Before connect\n");
+
+    pthread_t thread;
+    pthread_create(&thread, 0, start_new_downloader, (void*)downloader);
+
+    return downloader;
+}
+
+DownloadBuffer * Cache::get_from_cache(std::pair<std::string, std::string> key, Buffer * buffer_to_server) {
+    DownloadBuffer * buffer;
+
+    pthread_mutex_lock(&mtx);
+
+    if (!downloaders.count(key)) {
+        Downloader * downloader = create_new_downloader(key.first, buffer_to_server);
+        buffer = downloader->get_buffer();
+    }
+    else {
+        buffer = downloaders[key]->get_buffer();
+    }
 
     pthread_mutex_unlock(&mtx);
+
+    return buffer;
 }
 
 Cache::~Cache() {
-    for (auto elem : cache) {
-        free(elem.second.data);
+    for (auto elem : downloaders) {
+        delete elem;
     }
+
+    pthread_mutex_destroy(&mtx);
 }

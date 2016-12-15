@@ -6,6 +6,7 @@
 #define PORTFORWARDERREDEAWROFTROP_CACHE_H
 
 #include "Includes.h"
+#include "Downloader.h"
 
 struct Record {
     char * data;
@@ -14,21 +15,21 @@ struct Record {
 };
 
 class Cache {
-    std::map<std::pair<std::string, std::string>, Record> cache;
+    std::map<std::pair<std::string, std::string>, Downloader*> downloaders;
 
     pthread_mutex_t mtx;
+
+    void * start_new_downloader(void * pdownloader);
+
+    Downloader * create_new_downloader(std::string host_name, Buffer * buffer_to_server);
 
 public:
 
     Cache();
 
-    bool is_in_cache(std::pair<std::string, std::string> key);
-
-    Record get_from_cache(std::pair<std::string, std::string> key);
-
-    int push_to_cache(std::pair<std::string, std::string> key, char * value, size_t size_value);
-
     void delete_from_cache(std::pair<std::string, std::string> key);
+
+    DownloadBuffer * get_from_cache(std::pair<std::string, std::string> key, Buffer * buffer_to_server);
 
     ~Cache();
 };
