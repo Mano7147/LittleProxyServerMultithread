@@ -8,7 +8,6 @@
 #include "Cache.h"
 #include "Buffer.h"
 #include "Parser.h"
-#include "HostResolver.h"
 
 class Client {
     int my_socket;
@@ -29,8 +28,6 @@ class Client {
 
     Cache * cache;
 
-    HostResolver * host_resolver;
-
     bool flag_data_cached;
 
     pthread_mutex_t mtx_execute_loop;
@@ -45,7 +42,7 @@ class Client {
 
 public:
 
-    Client(int my_socket, Cache * cache, HostResolver * host_resolver);
+    Client(int my_socket, Cache * cache);
 
     int get_my_socket() {
         return my_socket;

@@ -3,5 +3,5 @@ project(LittleProxyServer)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread")
 
-set(SOURCE_FILES main.cpp Buffer.cpp Cache.cpp Client.cpp Parser.cpp HostResolver.cpp DownloadBuffer.cpp Downloader.cpp)
+set(SOURCE_FILES main.cpp Buffer.cpp Cache.cpp Client.cpp Parser.cpp DownloadBuffer.cpp Downloader.cpp)
 add_executable(LittleProxyServer ${SOURCE_FILES})

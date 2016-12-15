@@ -4,7 +4,7 @@
 
 #include "Client.h"
 
-Client::Client(int my_socket, Cache * cache, HostResolver * host_resolver) {
+Client::Client(int my_socket, Cache * cache) {
     this->my_socket = my_socket;
 
     flag_correct_my_socket = true;
@@ -27,8 +27,6 @@ Client::Client(int my_socket, Cache * cache, HostResolver * host_resolver) {
     flag_closed_http_socket = false;
 
     this->cache = cache;
-
-    this->host_resolver = host_resolver;
 }
 
 DownloadBuffer * Client::get_buffer_from_server(char *p_new_line, size_t i_next_line) {
@@ -67,11 +65,11 @@ int Client::receive_request_from_client() {
             return RESULT_INCORRECT;
         }
 
-        /*if (NULL != strchr(buffer_in->get_start(), '\n') && NULL == strstr(buffer_in->get_start(), "HTTP/1.0")) {
+        if (NULL != strchr(buffer_in->get_start(), '\n') && NULL == strstr(buffer_in->get_start(), "HTTP/1.0")) {
             fprintf(stderr, "Not http1.0 request:\n");
             Parser::print_buffer_data(buffer_in->get_start(), buffer_in->get_data_size());
             return RESULT_INCORRECT;
-        }*/
+        }
 
         if (buffer_in->get_data_size() > MAX_GET_REQUEST_SIZE) {
             fprintf(stderr, "Too big GET request\n");

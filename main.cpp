@@ -3,8 +3,6 @@
 
 Cache * cache;
 
-HostResolver * host_resolver;
-
 int my_server_socket;
 
 void init_my_server_socket(unsigned short server_port) {
@@ -61,7 +59,7 @@ void accept_incoming_connection() {
 
     fprintf(stderr, "Create new client\n");
 
-    Client * new_client = new Client(client_socket, cache, host_resolver);
+    Client * new_client = new Client(client_socket, cache);
     pthread_t new_thread;
 
     pthread_create(&new_thread, 0, new_client_thread_function, (void*)(new_client));
@@ -109,10 +107,6 @@ int main(int argc, char *argv[]) {
     init_my_server_socket(server_port);
 
     cache = new Cache();
-
-    char bad_request[100] = "Bad request\n\0";
-
-    host_resolver = new HostResolver();
 
     start_main_loop();
 
