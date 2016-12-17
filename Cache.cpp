@@ -57,7 +57,6 @@ DownloadBuffer * Cache::get_from_cache(std::pair<std::string, std::string> key, 
 
     if (!downloaders.count(key)) {
         Downloader * downloader = create_new_downloader(key.first, key.second, buffer_to_server);
-        downloaders[key] = downloader;
 
         if (NULL == downloader) {
             fprintf(stderr, "Can not to resolve host\n");
@@ -65,11 +64,13 @@ DownloadBuffer * Cache::get_from_cache(std::pair<std::string, std::string> key, 
             return NULL;
         }
 
+        downloaders[key] = downloader;
         buffer = downloader->get_buffer_from_server();
     }
     else {
         fprintf(stderr, "Have data in cache\n");
         buffer = downloaders[key]->get_buffer_from_server();
+        fprintf(stderr, "Have data in cache\n");
     }
 
     pthread_mutex_unlock(&mtx);

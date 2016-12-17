@@ -40,10 +40,10 @@ std::pair<std::string, std::string> Parser::get_new_first_line_and_hostname(Buff
         return std::make_pair("Bad request", "");
     }
 
-    /*if (NULL == strstr(buffer_in->get_start(), "HTTP/1.0")) {
+    if (NULL == strstr(buffer_in->get_start(), "HTTP/1.0")) {
         fprintf(stderr, "Not HTTP/1.0 request\n");
         return std::make_pair("Bad request", "");
-    }*/
+    }
 
     char first_line[LITTLE_STRING_SIZE];
 
